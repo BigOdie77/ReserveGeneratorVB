@@ -1,0 +1,44 @@
+To Do List:
+
+  1. Finish Methods: 
+  
+      TextFilter() 
+      Main()
+      readFile()
+      readLookupTable()
+      panelTimeHandler()
+      insert()
+      clearSchedule()
+      writeNewLookup()
+      writeErrorLog()
+      
+      Button Handlers 
+          btnBrowseLookupTbl
+          btnBrowseSch
+          btnGenMissedSch
+          btnGenSch
+          btnLoadAllNotes
+          btnSaveNoteChanges
+          btnClearNotes
+          btnSubmitNotes
+          btnSaveErrorLog
+      
+      
+Look Over:
+
+      getDate()
+      saveNotes()
+      loadNotes()
+      clearNotes()
+      writeNotes()
+      writeErrorLogFile()
+      dbConnect()
+      dbClose()
+      checkDesc()*
+      convertTo24HourFormat()
+      
+      Disclaimer: May need to re edit all code due to limited knowledge in vb and not properly coding.
+                  Learning on the fly while working
+
+* checkDesc will be heavily edited depending on what the operators want to do with the "DO NOT BOOK" Schedule time slots.
+  May alter some of the code elsewhere because of this
