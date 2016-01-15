@@ -14,7 +14,7 @@
 Imports System
 Imports System.Data
 Imports System.Data.SqlClient
-
+Imports Microsoft.Win32
 
 Public Class RevGeneratorVB
     'Global Variables
@@ -67,6 +67,9 @@ Public Class RevGeneratorVB
     'Purpose: To make sure file extensions are in lower case and are either .txt or .rec
     '
 
+
+
+
     '
     'Method Name: Main()
     'Purpose: to execute the main chunks of code
@@ -76,50 +79,38 @@ Public Class RevGeneratorVB
 
     End Sub
 
-
-
     'Button Handlers -----------------------------------------------------------------------------------------------------------------------------------------------
 
     'Browse for Look-up Table Button Handler
     Private Sub btnBrowseLookupTbl_Click(ByVal sender As System.Object, ByVal e As System.Windows.RoutedEventArgs) Handles btnBrowseLookupTbl.Click
-        'File chooser object WORKAROUNd
-        'NotInheritabe FileChooser fc = new Filechooser()
-        ' set fc to current dir.
-        ' set to only accept .txt and .rec
-        ' add the choose file option?
-        'int returnVal = fc.showOpenDialog(Of the window.this)
+        Dim fd As OpenFileDialog = New OpenFileDialog()
+        fd.InitialDirectory = "W:\\Reserve"
+        fd.Filter = "txt files (*.txt)|*.txt|rec files (*.rec)|*.rec|All files (*.*)|*.*"
+        fd.FilterIndex = 3
+        fd.RestoreDirectory = True
 
-        'If returnVal = JFileChooser.APPROVEOPTION Then
-        'create a new file to hold the selected file
-        'give TextBoxBrowseSch the new files absolute path
-        'End If
-
-
-
-
-
+        If fd.ShowDialog() = DialogResult Then
+            TextBoxBrowseLookup.Text = fd.FileName
+        End If
     End Sub
 
     'Browse for Schedule Button Handler
     Private Sub btnBrowseSch_Click(ByVal sender As System.Object, ByVal e As System.Windows.RoutedEventArgs) Handles btnBrowseSch.Click
-        'File chooser object WORKAROUNd
-        'NotInheritabe FileChooser fc = new Filechooser()
-        ' set fc to current dir.
-        ' set to only accept .txt and .rec
-        ' add the choose file option?
-        'int returnVal = fc.showOpenDialog(Of the window.this)
+        Dim fd As OpenFileDialog = New OpenFileDialog()
+        fd.InitialDirectory = "W:\\Reserve\\Daily"
+        fd.Filter = "txt files (*.txt)|*.txt|rec files (*.rec)|*.rec|All files (*.*)|*.*"
+        fd.FilterIndex = 3
+        fd.RestoreDirectory = True
 
-        'If returnVal = JFileChooser.APPROVEOPTION Then
-        'create a new file to hold the selected file
-        'give TextBoxBrowseSch the new files absolute path
-        'Try
-        'Edit the date into the textbox
-        'TextBoxNotePad.Text += "Schedule Date: " & GetDate() & vbNewLine
+        If fd.ShowDialog() = DialogResult Then
+            TextBoxBrowseLookup.Text = fd.FileName
+            Try
+                TextBoxNotePad.AppendText("Schedule Date: " & getDate() & vbNewLine & "Notes:")
+            Catch ex As Exception
+                System.Console.WriteLine("Error: " & ex.Message)
+            End Try
 
-        'Catch ex As Exception
-        'System.Console.WriteLine("Error: " & ex.Message)
-        'End Try
-        'End If
+        End If
     End Sub
 
     'Generate Missed Schedules Button Handler
@@ -146,7 +137,7 @@ Public Class RevGeneratorVB
     'Generate Schedule Button Handler
     Private Sub btnGenSch_Click(ByVal sender As System.Object, ByVal e As System.Windows.RoutedEventArgs) Handles btnGenSch.Click
         firstRun = False
-        progBar.Value = 0
+        ProgBar.Value = 0
         progress = 0
 
 
