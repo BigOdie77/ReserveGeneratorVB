@@ -5,23 +5,25 @@
 '         Writes the schedule to the database.
 '         Creates an error log containing panels that were not responding and rooms that do not exist on the system
 '         Creates an updated version of the panel look up table containing just the panels that were not responding the first time through.
-'         Creates a note file containing notes submitted from the user when creating a schedule.  
 '         
 'Date: Janurary 13th, 2016
 'Author: Eric Odette
 '
+Imports System.ComponentModel
 Imports System.Data.SqlClient
 Imports System.Text.RegularExpressions
 
 Public Class Form1
     Public RevGeneratorVB()
 
+    'Boolean Flags
     Private genFlag As Boolean = False
     Private ignoreFlag As Boolean = False
     Private firstRun As Boolean = False
     Private invalidFlag As Boolean = False
     Private updateFlag As Boolean = False
 
+    'Time variables
     Private TWELVE_TF As String = "hh:mma"
     Private TWENTY_FOUR_TF As String = "{HH:mm:ss}"
     Private finalEnd, finalStart, room, desc, instanceStr, devIDStr, panel As String
@@ -34,11 +36,13 @@ Public Class Form1
     Dim strtComm, endComm, insert1, insert2, select1, select2, updateCall As String
     Dim version As String = ""
 
+    'File and panel variables
     Private day As Integer
     Private progress As Double = 0.0
     Private fileSize As Long
     Private panelLine As String = ""
 
+    'Dictionary variables 
     Dim roomMap As New Dictionary(Of String, String)
     Dim missedScheduleDictionairy As New Dictionary(Of String, String)
     Dim unfoundRoomDictionairy As New Dictionary(Of String, String)
@@ -63,10 +67,24 @@ Public Class Form1
     '         it the Date and make sure the generate missed schedules button Is disabled
     '
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
-        TextBoxNotePad.Text = "Schedule Date: " & getDate()
-        TextBoxErrorLog.Text = "Notes: "
-        btnGenMissedSch.Enabled = False
+        Try
+            dateLbl.Text = "Schedule Date: " & getDate()
+            TextBoxErrorLog.Text = "Note Log: "
+            btnGenMissedSch.Enabled = False
+        Catch ex As Exception
+            MsgBox("Error generating application." & ex.Message)
+        End Try
+
     End Sub
+
+    'Private Sub New()
+
+    '    ' This call is required by the designer.
+    '    InitializeComponent()
+
+    '    ' Add any initialization after the InitializeComponent() call.
+    '    Form1_Load()
+    'End Sub
 
     '
     'Method Name: functionWorker()
@@ -93,11 +111,12 @@ Public Class Form1
             missedScheduleDictionairy.Clear()
 
         Catch ex As Exception
-            MsgBox("ERROR in generating schedule: " & ex.Message)
+            MsgBox("ERROR in FunctionWorker: Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
             progBar.Value = 0
             dbClose()
         End Try
     End Sub
+
 
     '
     'Method Name: dbConnect()
@@ -112,7 +131,7 @@ Public Class Form1
             TextBoxErrorLog.AppendText("Status: Database Connected." & vbNewLine)
 
         Catch ex As SqlException
-            System.Console.WriteLine("ERROR in opening database: " & ex.Message)
+            MsgBox("Error in opening the database connection. " & vbNewLine & "Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
         End Try
     End Sub ' end dbConnect
 
@@ -128,7 +147,7 @@ Public Class Form1
             TextBoxErrorLog.AppendText("Status: Database Closed." & vbNewLine)
 
         Catch ex As SqlException
-            System.Console.WriteLine("ERROR in closing database: " & ex.Message)
+            MsgBox("Error in closing the database connection. " & vbNewLine & "Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
         End Try
     End Sub
 
@@ -138,108 +157,111 @@ Public Class Form1
     '         search for the necessary information
     '
     Public Sub readFile(ByRef filePath As String)
-        Dim tempDay As Integer = 0
-        Dim pattern As String = "((Monday)|(Tuesday)|(Wednesday)|(Thursday)|(Friday)|(Saturday)|(Sunday))"
-        Dim fileReader As System.IO.StreamReader
-        fileReader = My.Computer.FileSystem.OpenTextFileReader(filePath)
+        Try
+            Dim tempDay As Integer = 0
+            Dim pattern As String = "((Monday)|(Tuesday)|(Wednesday)|(Thursday)|(Friday)|(Saturday)|(Sunday))"
+            Dim fileReader As System.IO.StreamReader
+            fileReader = My.Computer.FileSystem.OpenTextFileReader(filePath)
 
-        Dim strLine As String = fileReader.ReadLine()
-        Dim dayStr = strLine.Substring(0, 50).Trim()
-        dayStr = dayStr.Substring(0, 9)
+            Dim strLine As String = fileReader.ReadLine()
+            Dim dayStr = strLine.Substring(0, 50).Trim()
+            dayStr = dayStr.Substring(0, 9)
 
-        'For loop to grab the day of the week
-        If dayStr.Contains(",") Then
-            For ind As Integer = 0 To dayStr.Length()
-                If dayStr.ElementAt(ind) = "," Then
-                    dayStr = dayStr.Substring(0, ind)
-                    Exit For
-                End If
-            Next
-        End If
-
-        While Not fileReader.EndOfStream
-            Dim matcher As MatchCollection = Regex.Matches(dayStr, pattern)
-            For idx As Integer = 0 To matcher.Count()
-                Dim matchFound As Boolean = matcher.Item(idx).Success
-                If matchFound Then
-                    If matcher.Item(0).ToString.Equals("Monday") Then
-                        day = 1
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Tuesday") Then
-                        day = 2
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Wednesday") Then
-                        day = 3
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Thursday") Then
-                        day = 4
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Friday") Then
-                        day = 5
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Saturday") Then
-                        day = 6
-                        Exit For
-                    ElseIf matcher.Item(0).ToString.Equals("Sunday") Then
-                        day = 7
+            'For loop to grab the day of the week
+            If dayStr.Contains(",") Then
+                For ind As Integer = 0 To dayStr.Length()
+                    If dayStr.ElementAt(ind) = "," Then
+                        dayStr = dayStr.Substring(0, ind)
                         Exit For
                     End If
-                End If
-            Next
-
-            Dim values As String
-            Dim startTime, endTime
-
-            'Format string to get the time frame by itself
-            strLine = strLine.Trim()
-            values = strLine.Substring(56, 85).Trim()
-            startTime = values.Substring(0, 7).Trim()
-
-            'Convert to a DateTime object and -1 hour from it to account for warm-up on schedule
-            Dim startTimeTemp As DateTime = startTime
-            startTimeTemp = startTimeTemp.AddHours(-1)
-            startTime = startTimeTemp
-            endTime = values.Substring(9, 16).Trim()
-
-            'Final time in 24 hour format
-            finalStart = convertTo24HoursFormat(startTime)
-            finalEnd = convertTo24HoursFormat(endTime)
-
-            'Format string for the room value
-            values = values.Substring(17).Trim()
-            room = values.Substring(0, 25).Trim()
-
-            'Format string for the description
-            values = values.Substring(25).Trim()
-            desc = values.Trim()
-
-            If Not checkDesc(desc) Then
-                'do not use this room. no need to allocate a schedule
-            Else
-
-                If day <> tempDay Then
-                    TextBoxErrorLog.AppendText("Status: Clearing Schedules... " & vbNewLine)
-                    If Not btnGenMissedSch.Enabled Then
-                        clearSchedule(TextBoxBrowseLookup.Text)
-                    ElseIf btnGenMissedSch.Enabled Then
-                        clearSchedule(TextBoxGenMissedSch.Text)
-                    End If
-                    tempDay = day
-                    TextBoxErrorLog.AppendText("Status: Creating new schedules..." & vbNewLine)
-                End If
-
-                If Not btnGenMissedSch.Enabled() Then
-                    readLookupTable(TextBoxBrowseLookup.Text)
-                ElseIf btnGenMissedSch.Enabled() Then
-                    readLookupTable(TextBoxGenMissedSch.Text)
-                End If
-
-                progress += 1
-                progBar.Value = progress
+                Next
             End If
-            strLine = fileReader.ReadLine()
+            fileReader = My.Computer.FileSystem.OpenTextFileReader(filePath)
+            While Not fileReader.EndOfStream And strLine <> ""
+                strLine = fileReader.ReadLine()
+                Dim matcher As MatchCollection = Regex.Matches(dayStr, pattern)
+                For idx As Integer = 0 To matcher.Count()
+                    Dim matchFound As Boolean = matcher.Item(idx).Success
+                    If matchFound Then
+                        If matcher.Item(0).ToString.Equals("Monday") Then
+                            day = 1
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Tuesday") Then
+                            day = 2
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Wednesday") Then
+                            day = 3
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Thursday") Then
+                            day = 4
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Friday") Then
+                            day = 5
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Saturday") Then
+                            day = 6
+                            Exit For
+                        ElseIf matcher.Item(0).ToString.Equals("Sunday") Then
+                            day = 7
+                            Exit For
+                        End If
+                    End If
+                Next
 
-        End While
+                Dim values As String
+                Dim startTime, endTime
+
+                'Format string to get the time frame by itself
+                strLine = strLine.Trim()
+                values = strLine.Substring(56, 85).Trim()
+                startTime = values.Substring(0, 7).Trim()
+
+                'Convert to a DateTime object and -1 hour from it to account for warm-up on schedule
+                Dim startTimeTemp As DateTime = startTime
+                startTimeTemp = startTimeTemp.AddHours(-1)
+                startTime = startTimeTemp
+                endTime = values.Substring(9, 16).Trim()
+
+                'Final time in 24 hour format
+                finalStart = convertTo24HoursFormat(startTime)
+                finalEnd = convertTo24HoursFormat(endTime)
+
+                'Format string for the room value
+                values = values.Substring(17).Trim()
+                room = values.Substring(0, 25).Trim()
+
+                'Format string for the description
+                values = values.Substring(25).Trim()
+                desc = values.Trim()
+
+                If Not checkDesc(desc) Then
+                    'do not use this room. no need to allocate a schedule
+                Else
+
+                    If day <> tempDay Then
+                        TextBoxErrorLog.AppendText("Status: Clearing Schedules... " & vbNewLine)
+                        If Not btnGenMissedSch.Enabled Then
+                            clearSchedule(TextBoxBrowseLookup.Text)
+                        ElseIf btnGenMissedSch.Enabled Then
+                            clearSchedule(TextBoxGenMissedSch.Text)
+                        End If
+                        tempDay = day
+                        TextBoxErrorLog.AppendText("Status: Creating new schedules..." & vbNewLine)
+                    End If
+
+                    If Not btnGenMissedSch.Enabled() Then
+                        readLookupTable(TextBoxBrowseLookup.Text)
+                    ElseIf btnGenMissedSch.Enabled() Then
+                        readLookupTable(TextBoxGenMissedSch.Text)
+                    End If
+                    progress += 1
+                    progBar.Value = progress
+
+                End If
+            End While
+        Catch ex As Exception
+            MsgBox("Error in readFile(). Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
+        End Try
     End Sub
 
     '
@@ -629,6 +651,7 @@ Public Class Form1
         progBar.Value = 0
         progress = 0
         tempPanelInfoArray.Clear()
+
         Try
             setProgressBarMax()
             functionWorker()
@@ -652,26 +675,6 @@ Public Class Form1
         End Try
     End Sub
 
-    'Load All Notes
-    Private Sub btnLoadAllNotes_Click(sender As Object, e As EventArgs) Handles btnLoadAllNotes.Click
-        loadNotes()
-    End Sub
-
-    'Save note changes
-    Private Sub btnSaveNoteChanges_Click(sender As Object, e As EventArgs) Handles btnSaveNoteChanges.Click
-        saveNotes()
-    End Sub
-
-    'clear notes
-    Private Sub btnClearNotes_Click(sender As Object, e As EventArgs) Handles btnClearNotes.Click
-        clearNotes()
-    End Sub
-
-    'Submit notes
-    Private Sub btnSubmitNotes_Click(sender As Object, e As EventArgs) Handles btnSubmitNotes.Click
-        writeNotes()
-    End Sub
-
     'Save error log
     Private Sub btnSaveErrorLog_Click(sender As Object, e As EventArgs) Handles btnSaveErrorLog.Click
         Try
@@ -680,87 +683,6 @@ Public Class Form1
             System.Console.WriteLine("Error: " & ex.Message)
         End Try
     End Sub
-
-    '
-    'Method Name: writeNotes()
-    'Purpose: Writes the text from the notes TextBox in the program 
-    '         into a text file for the user to view later
-    '
-    Public Sub writeNotes()
-        Try
-            My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\notes.txt", TextBoxNotePad.Text, False)
-            MsgBox("Notes submitted to W:\WES SOFTWARE\Reservations Generator\notes.txt")
-        Catch ex As Exception
-            MsgBox("ERROR in writing notes: " & ex.Message)
-        End Try
-    End Sub
-
-    '
-    'Method Name: clearNotes()
-    'Purpose: Clears the entire notes.txt file so that it is blank
-    '
-    Public Sub clearNotes()
-        Try
-            Dim msg As String = "Are you sure you want to delete all previous notes? "
-            Dim style = MsgBoxStyle.YesNo Or MsgBoxStyle.DefaultButton2 Or
-                         MsgBoxStyle.Critical
-            Dim response = MsgBox(msg, style)
-
-            If response = MsgBoxResult.Yes Then
-                My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\notes.txt", "", False)
-                TextBoxNotePad.Text = "Schedule Date: " & getDate() & vbNewLine & "Notes: "
-                My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\notes.txt", TextBoxNotePad.Text, False)
-                MsgBox("Notes deleted from W:\WES SOFTWARE\Reservations Generator\notes.txt")
-            End If
-
-        Catch ex As Exception
-            MsgBox("ERROR in clearing notes: " & ex.Message)
-        End Try
-    End Sub
-
-    '
-    'Method Name: loadNotes()
-    'Purpose: Loads the notes.txt file into the TextBox making it 
-    '         available to edit 
-    '
-    Public Sub loadNotes()
-        Try
-            Dim fileReader As System.IO.StreamReader
-            fileReader = My.Computer.FileSystem.OpenTextFileReader("W:\WES SOFTWARE\Reservations Generator\notes.txt")
-            TextBoxNotePad.Text = ""
-            Dim strLine As String = fileReader.ReadLine()
-            TextBoxNotePad.AppendText(strLine & vbNewLine)
-
-            While Not fileReader.EndOfStream
-                strLine = fileReader.ReadLine()
-                TextBoxNotePad.AppendText(strLine & vbNewLine)
-            End While
-        Catch ex As Exception
-            MsgBox("ERROR in loading notes: " & ex.Message)
-        End Try
-    End Sub
-
-    '
-    'Method Name: saveNotes()
-    'Purpose: Overwrites the notes.txt file with the current text 
-    '         in the TextBox
-    '
-    Public Sub saveNotes()
-        Try
-            'Create msg and style for a message box with options yes/no and a critical message icon.
-            Dim msg As String = "Are you sure you want to save changes? "
-            Dim style = MsgBoxStyle.YesNo Or MsgBoxStyle.DefaultButton2 Or MsgBoxStyle.Critical
-            Dim response = MsgBox(msg, style)
-
-            If response = MsgBoxResult.Yes Then
-                My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\notes.txt", TextBoxNotePad.Text, False)
-                MsgBox("Notes saved to W:\WES SOFTWARE\Reservations Generator\notes.txt")
-            End If
-        Catch ex As Exception
-            MsgBox("ERROR in saving notes: " & ex.Message)
-        End Try
-    End Sub
-
     '
     'Method Name: getDate()
     'Purpose: Reads the schedule file to determine the date those 
@@ -781,8 +703,8 @@ Public Class Form1
     'Purpose: to reset the textboxes and buttons to default values
     '
     Public Sub defaultSettings()
-        TextBoxNotePad.Text = "Schedule Date: " & getDate() & vbNewLine & "Notes:"
-        TextBoxErrorLog.Text = "Error log: " & vbNewLine
+        dateLbl.Text = "Schedule Date: " & getDate()
+        TextBoxErrorLog.Text = "Note log: " & vbNewLine
     End Sub
 
     '
