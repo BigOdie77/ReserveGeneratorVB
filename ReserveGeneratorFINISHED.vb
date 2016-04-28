@@ -1,15 +1,15 @@
 '
 'Program Name: RsvGeneratorVB
 'Purpose: Reads in all the Panels and corresponding information from a text file.
-'         Reads in the Schedule information and loads it to a variable from a text file.
+'         Reads in the Schedule information and loads them to proper variables from a text file.
 '         Writes the schedule to the database.
 '         Creates an error log containing panels that were not responding and rooms that do not exist on the system
 '         Creates an updated version of the panel look up table containing just the panels that were not responding the first time through.
 '         
-'Date: Janurary 13th, 2016
-'Author: Eric Odette
+'Date Started: Janurary 13th, 2016 
+'Date Finished: Feburary 29th 2016 Updated April 1st and 19th
+'Programmer and Coder: Eric Odette
 '
-Imports System.ComponentModel
 Imports System.Data.SqlClient
 Imports System.Text.RegularExpressions
 
@@ -17,36 +17,35 @@ Public Class Form1
     Public RevGeneratorVB()
 
     'Boolean Flags
-    Private genFlag As Boolean = False
-    Private ignoreFlag As Boolean = False
-    Private firstRun As Boolean = False
-    Private invalidFlag As Boolean = False
-    Private updateFlag As Boolean = False
+    Private genFlag As Boolean = False          ' Flag to determine if the programs already run once
+    Private ignoreFlag As Boolean = False       ' Makes sure the program only runs the block of code once
+    Private firstRun As Boolean = False         ' Makes sure the panel object hasnt been created already
+    Private invalidFlag As Boolean = False      ' Monitors the inserts into the database dont fail
+    Private updateFlag As Boolean = False       ' Monitors whether or not the the update is needed
+    Private errorFlag As Boolean = False        ' Determines what message will be outputted at the end
 
-    'Time variables
-    Private TWELVE_TF As String = "hh:mma"
-    Private TWENTY_FOUR_TF As String = "{HH:mm:ss}"
+    'Time and Panel variables
     Private finalEnd, finalStart, room, desc, instanceStr, devIDStr, panel As String
 
     'Database Variables
-    Dim Cnxn As New ADODB.Connection
-    Dim cmdChange As ADODB.Command
-    Dim Result As ADODB.Recordset
-    Dim cmdStr As String
-    Dim strtComm, endComm, insert1, insert2, select1, select2, updateCall As String
-    Dim version As String = ""
+    Private Cnxn As New ADODB.Connection
+    Private cmdChange As ADODB.Command
+    Private Result As ADODB.Recordset
+    Private strtComm, endComm, insert1, insert2, select1, select2, updateCall As String
+    Private version As String = ""
+    Private cmdStr As String = ""
 
     'File and panel variables
-    Private day As Integer
+    Private day As Integer = 0
     Private progress As Double = 0.0
-    Private fileSize As Long
+    Private fileSize As Long = 0
     Private panelLine As String = ""
 
     'Dictionary variables 
-    Dim roomMap As New Dictionary(Of String, String)
-    Dim missedScheduleDictionairy As New Dictionary(Of String, String)
-    Dim unfoundRoomDictionairy As New Dictionary(Of String, String)
-    Dim ignoreRoomMap As New Dictionary(Of String, String)
+    Private roomMap As New Dictionary(Of String, String)
+    Private missedScheduleDictionairy As New Dictionary(Of String, String)
+    Private unfoundRoomDictionairy As New Dictionary(Of String, String)
+    Private ignoreRoomMap As New Dictionary(Of String, String)
 
     'ArrayLists
     Private tempPanelInfoArray As New ArrayList() 'Type PanelData
@@ -55,10 +54,47 @@ Public Class Form1
     'PanelData Class
     'Holds data related to the panels like the device Id, instance, start time and end time
     Public Class PanelData
-        Public dev As String = ""
-        Public inst As String = ""
-        Public tempStart As Double = 0.0
-        Public tempEnd As Double = 0.0
+        Private dev As String = ""
+        Private inst As String = ""
+        Private tempStart As Double = 0.0
+        Private tempEnd As Double = 0.0
+
+        'Property functions (Act as getters and setters for VB.NET)			
+        Public Property Dev1 As String
+            Get
+                Return dev
+            End Get
+            Set(value As String)
+                dev = value
+            End Set
+        End Property
+
+        Public Property Inst1 As String
+            Get
+                Return inst
+            End Get
+            Set(value As String)
+                inst = value
+            End Set
+        End Property
+
+        Public Property TempStart1 As Double
+            Get
+                Return tempStart
+            End Get
+            Set(value As Double)
+                tempStart = value
+            End Set
+        End Property
+
+        Public Property TempEnd1 As Double
+            Get
+                Return tempEnd
+            End Get
+            Set(value As Double)
+                tempEnd = value
+            End Set
+        End Property
     End Class
 
     '
@@ -67,24 +103,12 @@ Public Class Form1
     '         it the Date and make sure the generate missed schedules button Is disabled
     '
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
-        Try
-            dateLbl.Text = "Schedule Date: " & getDate()
-            TextBoxErrorLog.Text = "Note Log: "
-            btnGenMissedSch.Enabled = False
-        Catch ex As Exception
-            MsgBox("Error generating application." & ex.Message)
-        End Try
-
+        dateLbl.Text = "Schedule Date: " & getDate()
+        dateLbl.Refresh()
+        TextBoxErrorLog.Text = "Note Log: "
+        btnGenMissedSch.Enabled = False
+        errorFlag = False
     End Sub
-
-    'Private Sub New()
-
-    '    ' This call is required by the designer.
-    '    InitializeComponent()
-
-    '    ' Add any initialization after the InitializeComponent() call.
-    '    Form1_Load()
-    'End Sub
 
     '
     'Method Name: functionWorker()
@@ -102,21 +126,24 @@ Public Class Form1
             writeNewLookup()
             btnGenSch.Enabled = False
 
-            If missedScheduleDictionairy.Count = 0 And unfoundRoomDictionairy.Count = 0 Then
+            If missedScheduleDictionairy.Count = 0 And unfoundRoomDictionairy.Count = 0 And errorFlag = False Then
                 MsgBox("Schedules Created!")
-            Else
+            ElseIf errorFlag = False Then
                 MsgBox("Schedules Created with some errors." & vbNewLine & "Please veiw the Error Log below for further detail")
+
             End If
 
             missedScheduleDictionairy.Clear()
 
         Catch ex As Exception
-            MsgBox("ERROR in FunctionWorker: Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
+            MsgBox("ERROR in FunctionWorker. Message: " & ex.Message)
             progBar.Value = 0
-            dbClose()
+            If Cnxn.Equals(True) Then
+                dbClose()
+            End If
+            errorFlag = True
         End Try
     End Sub
-
 
     '
     'Method Name: dbConnect()
@@ -131,7 +158,7 @@ Public Class Form1
             TextBoxErrorLog.AppendText("Status: Database Connected." & vbNewLine)
 
         Catch ex As SqlException
-            MsgBox("Error in opening the database connection. " & vbNewLine & "Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
+            MsgBox("ERROR in opening the database connection. Message: " & ex.Message & vbNewLine & "Check that the database connection is opertaing properly")
         End Try
     End Sub ' end dbConnect
 
@@ -147,7 +174,7 @@ Public Class Form1
             TextBoxErrorLog.AppendText("Status: Database Closed." & vbNewLine)
 
         Catch ex As SqlException
-            MsgBox("Error in closing the database connection. " & vbNewLine & "Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
+            MsgBox("ERROR in closing the database connection. Message: " & ex.Message & vbNewLine & "Check that the database connection is opertaing properly")
         End Try
     End Sub
 
@@ -157,6 +184,7 @@ Public Class Form1
     '         search for the necessary information
     '
     Public Sub readFile(ByRef filePath As String)
+        Dim dayStr As String = ""
         Try
             Dim tempDay As Integer = 0
             Dim pattern As String = "((Monday)|(Tuesday)|(Wednesday)|(Thursday)|(Friday)|(Saturday)|(Sunday))"
@@ -164,7 +192,7 @@ Public Class Form1
             fileReader = My.Computer.FileSystem.OpenTextFileReader(filePath)
 
             Dim strLine As String = fileReader.ReadLine()
-            Dim dayStr = strLine.Substring(0, 50).Trim()
+            dayStr = strLine.Substring(0, 50).Trim()
             dayStr = dayStr.Substring(0, 9)
 
             'For loop to grab the day of the week
@@ -213,18 +241,9 @@ Public Class Form1
 
                 'Format string to get the time frame by itself
                 strLine = strLine.Trim()
-                values = strLine.Substring(56, 85).Trim()
+                values = strLine.Substring(54, 85).Trim()
                 startTime = values.Substring(0, 7).Trim()
-
-                'Convert to a DateTime object and -1 hour from it to account for warm-up on schedule
-                Dim startTimeTemp As DateTime = startTime
-                startTimeTemp = startTimeTemp.AddHours(-1)
-                startTime = startTimeTemp
                 endTime = values.Substring(9, 16).Trim()
-
-                'Final time in 24 hour format
-                finalStart = convertTo24HoursFormat(startTime)
-                finalEnd = convertTo24HoursFormat(endTime)
 
                 'Format string for the room value
                 values = values.Substring(17).Trim()
@@ -234,10 +253,22 @@ Public Class Form1
                 values = values.Substring(25).Trim()
                 desc = values.Trim()
 
-                If Not checkDesc(desc) Then
-                    'do not use this room. no need to allocate a schedule
-                Else
+                'Convert to a DateTime object and -1 hour from it to account for warm-up on schedule
+                Try
+                    Dim startTimeTemp As DateTime = startTime
+                    startTimeTemp = startTimeTemp.AddHours(-1)
+                    startTime = startTimeTemp
+                Catch ex As Exception
+                    TextBoxErrorLog.AppendText("ERROR converting start time to a DateTime variable. start time = """ & startTime & """. Room: " & room & vbNewLine & "Please ensure that the value is in a proper time format (00:00:00, 00:00, etc.)" & vbNewLine)
+                    errorFlag = True
+                    Exit Sub
+                End Try
 
+                'Final time in 24 hour format
+                finalStart = convertTo24HoursFormat(startTime)
+                finalEnd = convertTo24HoursFormat(endTime)
+
+                If checkDesc(desc) Then
                     If day <> tempDay Then
                         TextBoxErrorLog.AppendText("Status: Clearing Schedules... " & vbNewLine)
                         If Not btnGenMissedSch.Enabled Then
@@ -260,7 +291,10 @@ Public Class Form1
                 End If
             End While
         Catch ex As Exception
-            MsgBox("Error in readFile(). Object/Variable: " & ex.Source & vbNewLine & "Message: " & ex.Message)
+            TextBoxErrorLog.AppendText("ERROR in reading the schedule file. Message from error: " & ex.Message & vbNewLine &
+                   " Data when it failed " & vbNewLine & " Panel: " & devIDStr & "Time frame: " & finalStart & " - " & finalEnd & "Day: " & dayStr)
+            errorFlag = True
+            Exit Sub
         End Try
     End Sub
 
@@ -363,10 +397,10 @@ Public Class Form1
         ' insert flag used so that schedules don't get inserted a second time when executing the for loop
         Dim insertFlag As Boolean = False
         If Not firstRun Then
-            temps.dev = devIDStr
-            temps.inst = instanceStr
-            temps.tempStart = startTime
-            temps.tempEnd = endTime
+            temps.Dev1 = devIDStr
+            temps.Inst1 = instanceStr
+            temps.TempStart1 = startTime
+            temps.TempEnd1 = endTime
             updateFlag = False
             tempPanelInfoArray.Add(temps)
             insert()
@@ -375,25 +409,28 @@ Public Class Form1
             Dim pd As PanelData = Nothing
             For index As Integer = 0 To tempPanelInfoArray.Count - 1
                 pd = tempPanelInfoArray.Item(index)
-                If pd.dev.Equals(devIDStr) And pd.inst.Equals(instanceStr) Then
+                If pd.Dev1.Equals(devIDStr) And pd.Inst1.Equals(instanceStr) Then
                     insertFlag = True
-                    If pd.tempStart <= startTime And pd.tempEnd >= endTime Then
+                    If pd.TempStart1 <= startTime And pd.TempEnd1 >= endTime Then
 
                     Else ' panel exists change values for it
-                        temps.dev = devIDStr
-                        temps.inst = instanceStr
-                        temps.tempStart = startTime
-                        temps.tempEnd = endTime
+                        temps.Dev1 = devIDStr
+                        temps.Inst1 = instanceStr
+                        temps.TempStart1 = startTime
+                        temps.TempEnd1 = endTime
 
-                        If startTime >= pd.tempStart And startTime <= pd.tempEnd And endTime <= pd.tempEnd Then 'Do nothing, no need to update or insert for a time slot already alocated
+                        If startTime >= pd.TempStart1 And startTime <= pd.TempEnd1 And endTime <= pd.TempEnd1 Then 'Do nothing, no need to update or insert for a time slot already alocated
                             Exit For
-                        ElseIf startTime >= pd.tempStart And startTime <= pd.tempEnd And endTime > pd.tempEnd Then 'only need to update no insert needed
+                        ElseIf startTime >= pd.TempStart1 And startTime <= pd.tempEnd1 And endTime > pd.tempEnd1 Then 'only need to update no insert needed
                             updateFlag = True
-                        ElseIf startTime > pd.tempStart And startTime > pd.tempEnd And endTime > pd.tempEnd Then 'new insert needed no update
+                        ElseIf startTime > pd.tempStart1 And startTime > pd.tempEnd1 And endTime > pd.tempEnd1 Then 'new insert needed no update
                             updateFlag = False
                         Else
                             updateFlag = False
-                            MsgBox("Else block hit in panelTimeHandler: check values?")
+                            TextBoxErrorLog.AppendText("Else block hit in panelTimeHandler. Panel: " & temps.Dev1 & ". Time Frame: " & temps.TempStart1 & " To " & temps.TempEnd1 & vbNewLine _
+                                   & "Check Panel to make sure its online or that the file is getting proper time values")
+                            errorFlag = True
+                            Exit Sub
                         End If
 
                         insert()
@@ -405,10 +442,10 @@ Public Class Form1
             'Add new panel
             If Not insertFlag Then
                 updateFlag = False
-                temps.dev = devIDStr
-                temps.inst = instanceStr
-                temps.tempStart = startTime
-                temps.tempEnd = endTime
+                temps.Dev1 = devIDStr
+                temps.Inst1 = instanceStr
+                temps.TempStart1 = startTime
+                temps.TempEnd1 = endTime
                 tempPanelInfoArray.Add(temps)
                 insert()
             End If
@@ -422,7 +459,6 @@ Public Class Form1
     '
     Private Sub insert()
         Dim found As Boolean = False
-
         cmdChange = New ADODB.Command
         cmdChange.ActiveConnection = Cnxn
 
@@ -432,7 +468,7 @@ Public Class Form1
         cmdStr = "SELECT ApplicationSWVersion FROM OBJECT_BAC_DEV WHERE DEV_ID = " & devIDStr
         cmdChange.CommandText = cmdStr
 
-        version = cmdChange.Execute().GetString
+        version = cmdChange.Execute().GetString()
         version = version.Trim()
 
         If version.Equals("V3.40") Then
@@ -455,7 +491,8 @@ Public Class Form1
             insert2 = ""
             select2 = ""
             updateCall = ""
-            MsgBox("Error: framework for panel is not 3.33 or 3.40. Program will not be able to process this panel.")
+            MsgBox("Error: framework for panel is not 3.33 or 3.40. Program will not be able to process this panel. Panel type: " & version & "Panel: " & devIDStr)
+            Exit Sub
         End If
 
         If updateFlag = True Then
@@ -522,35 +559,38 @@ Public Class Form1
     Public Sub clearSchedule(ByVal s As String)
         Dim fileReader As System.IO.StreamReader = My.Computer.FileSystem.OpenTextFileReader(s)
         Dim strLine As String = fileReader.ReadLine()
-
-        If fileReader.EndOfStream = True Then
-            Exit Sub
-        End If
-
-        'flag used to make sure the variables get assigned properly in the for loop
-        Dim firstFlag As Boolean = False
-
-        While Not strLine.Contains("###")
-            strLine = fileReader.ReadLine()
-        End While
-
-        While Not fileReader.EndOfStream
-            Dim currentPanelInfoArray As String()
-            currentPanelInfoArray = strLine.Split("#")
-            If strLine.Contains("##") Then
-                devIDStr = currentPanelInfoArray.ElementAt(6)
-                instanceStr = currentPanelInfoArray.ElementAt(9)
-                cmdChange = New ADODB.Command
-                cmdChange.ActiveConnection = Cnxn
-                cmdStr = "Delete FROM  ARRAY_BAC_SCH_Schedule WHERE INSTANCE = " & instanceStr & " And DEV_ID = " & devIDStr & " And DAY = " & day
-                cmdChange.CommandText = cmdStr
-                cmdChange.Execute()
-                progress += 1
-                progBar.Value = progress
-                progBar.Refresh()
+        Try
+            If fileReader.EndOfStream = True Then
+                Exit Sub
             End If
-            strLine = fileReader.ReadLine()
-        End While
+
+            'flag used to make sure the variables get assigned properly in the for loop
+            Dim firstFlag As Boolean = False
+
+            While Not strLine.Contains("###")
+                strLine = fileReader.ReadLine()
+            End While
+
+            While Not fileReader.EndOfStream
+                Dim currentPanelInfoArray As String()
+                currentPanelInfoArray = strLine.Split("#")
+                If strLine.Contains("##") Then
+                    devIDStr = currentPanelInfoArray.ElementAt(6)
+                    instanceStr = currentPanelInfoArray.ElementAt(9)
+                    cmdChange = New ADODB.Command
+                    cmdChange.ActiveConnection = Cnxn
+                    cmdStr = "Delete FROM  ARRAY_BAC_SCH_Schedule WHERE INSTANCE = " & instanceStr & " And DEV_ID = " & devIDStr & " And DAY = " & day
+                    cmdChange.CommandText = cmdStr
+                    cmdChange.Execute()
+                    progress += 1
+                    progBar.Value = progress
+                    progBar.Refresh()
+                End If
+                strLine = fileReader.ReadLine()
+            End While
+        Catch ex As Exception
+            MsgBox("ERROR in clearing schedules: Failed on line '" & strLine & "' in the look-up table. " & vbNewLine & "Please check that panel to see if it is offline, or causing issues.")
+        End Try
     End Sub
 
     '
@@ -560,13 +600,17 @@ Public Class Form1
     '
     Public Sub writeNewLookup()
         Try
+            'Dim fileWriter As StreamWriter = File.CreateText("W:\WES SOFTWARE\Reservations Generator\newLookup.txt")
+            'fileWriter.Write("", False)
             My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\newLookup.txt", "", False)
+
             If lookupArray.Count <> 0 Then
                 For index As Integer = 0 To lookupArray.Count - 1
-                    My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\newLookup.txt", lookupArray.Item(index) & vbNewLine, True) 'W:\WES SOFTWARE\Reservations Generator\Test Schedule Online\newLookup.txt
+                    My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\newLookup.txt", lookupArray.Item(index) & vbNewLine, True)
                 Next
                 lookupArray.Clear()
             End If
+            'fileWriter.Close()
         Catch ex As Exception
             MsgBox("ERROR in writing new look-up: " & ex.Message)
         End Try
@@ -595,7 +639,7 @@ Public Class Form1
                 Next
             End If
         Catch ex As Exception
-            MsgBox("ERROR in writing error log: " & ex.Message)
+            MsgBox("ERROR in writing error log to the program, Message: " & ex.Message)
         End Try
     End Sub
 
@@ -607,8 +651,9 @@ Public Class Form1
         Try
             My.Computer.FileSystem.WriteAllText("W:\WES SOFTWARE\Reservations Generator\errorLog.txt", TextBoxErrorLog.Text, False)
             MsgBox("Error Log saved to W:\WES SOFTWARE\Reservations Generator\errorLog.txt")
+
         Catch ex As Exception
-            MsgBox("ERROR in writing Error Log File: " & ex.Message)
+            MsgBox("ERROR in writing Error Log File, Message: " & ex.Message)
         End Try
     End Sub
 
@@ -625,8 +670,10 @@ Public Class Form1
         If fd.ShowDialog() = DialogResult.Equals(vbOK) Then
             TextBoxBrowseLookup.Text = fd.FileName
         End If
-
+        btnGenSch.Enabled = True
+        btnGenMissedSch.Enabled = False
         TextBoxBrowseLookup.Text = fd.FileName
+
     End Sub
 
     'Browse Schedule
@@ -642,6 +689,10 @@ Public Class Form1
         End If
 
         TextBoxBrowseSch.Text = fd.FileName
+        dateLbl.Text = "Schedule Date: " & getDate()
+        dateLbl.Refresh()
+        btnGenSch.Enabled = True
+        btnGenMissedSch.Enabled = False
     End Sub
 
     'Generate Missed Schedules
@@ -651,28 +702,19 @@ Public Class Form1
         progBar.Value = 0
         progress = 0
         tempPanelInfoArray.Clear()
-
-        Try
-            setProgressBarMax()
-            functionWorker()
-        Catch ex As Exception
-            System.Console.WriteLine("Error: " & ex.Message)
-        End Try
+        setProgressBarMax()
+        functionWorker()
     End Sub
 
     'Generate Schedules
     Private Sub btnGenSch_Click(sender As Object, e As EventArgs) Handles btnGenSch.Click
+        defaultSettings()
         firstRun = False
         progBar.Value = 0
         progress = 0
         tempPanelInfoArray.Clear()
-
-        Try
-            setProgressBarMax()
-            functionWorker()
-        Catch ex As Exception
-            System.Console.WriteLine("Error: " & ex.Message)
-        End Try
+        setProgressBarMax()
+        functionWorker()
     End Sub
 
     'Save error log
@@ -680,7 +722,7 @@ Public Class Form1
         Try
             writeErrorLogFile()
         Catch ex As Exception
-            System.Console.WriteLine("Error: " & ex.Message)
+            System.Console.WriteLine("ERROR saving the Error Log, Message: " & ex.Message)
         End Try
     End Sub
     '
@@ -695,6 +737,7 @@ Public Class Form1
         fileReader = My.Computer.FileSystem.OpenTextFileReader(TextBoxBrowseSch.Text)
         Dim strLine As String = fileReader.ReadLine().Trim()
         strLine = strLine.Substring(0, 55).Trim()
+        fileReader.Close()
         Return strLine
     End Function
 
@@ -704,7 +747,9 @@ Public Class Form1
     '
     Public Sub defaultSettings()
         dateLbl.Text = "Schedule Date: " & getDate()
+        dateLbl.Refresh()
         TextBoxErrorLog.Text = "Note log: " & vbNewLine
+        TextBoxErrorLog.Refresh()
     End Sub
 
     '
